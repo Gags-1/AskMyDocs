@@ -8,3 +8,4 @@ temp_uploaded_pdfs/
 infra/terraform/.terraform/
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars
