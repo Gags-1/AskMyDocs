@@ -24,11 +24,11 @@ TEMP_QDRANT_COLLECTION_NAME = "user_uploaded_pdf_vectors"
 
 @st.cache_resource
 def get_embedding_model():
-    return GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
 @st.cache_resource
 def get_llm():
-    return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+    return ChatGoogleGenerativeAI(model="gemini-3.6-flash")
 
 embedding_model = get_embedding_model()
 llm = get_llm()
@@ -92,35 +92,92 @@ if uploaded_file is not None and st.session_state.vector_db is None:
 
 # --- Chat Interface ---
 if st.session_state.vector_db is not None:
+
+    # Display previous messages
     for message in st.session_state.messages:
         if isinstance(message, HumanMessage):
             with st.chat_message("user"):
                 st.markdown(message.content)
+
         elif isinstance(message, AIMessage):
             with st.chat_message("assistant"):
                 st.markdown(message.content)
 
+    # Get new user question
     if prompt := st.chat_input("What would you like to know about the PDF?"):
-        st.session_state.messages.append(HumanMessage(content=prompt))
+
+        # Store the user's question
+        st.session_state.messages.append(
+            HumanMessage(content=prompt)
+        )
+
+        # Display user's question
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        # Generate answer
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                search_results = st.session_state.vector_db.similarity_search(query=prompt)
 
+                # Search Qdrant for relevant PDF chunks
+                search_results = st.session_state.vector_db.similarity_search(
+                    query=prompt
+                )
+
+                # Build context from retrieved chunks
                 current_turn_context = "\n\n\n".join([
-                    f"Page Content: {result.page_content}\nPage Number: {result.metadata['page_label']}\nFile Location: {result.metadata['source']}"
+                    f"Page Content: {result.page_content}\n"
+                    f"Page Number: {result.metadata['page_label']}\n"
+                    f"File Location: {result.metadata['source']}"
                     for result in search_results
                 ])
 
+                # Create system message containing the retrieved context
                 current_system_message = SystemMessage(
-                    content=st.session_state.messages[0].content + "\n\nContext:\n" + current_turn_context
+                    content=(
+                        st.session_state.messages[0].content
+                        + "\n\nContext:\n"
+                        + current_turn_context
+                    )
                 )
 
-                messages_to_send = [current_system_message] + st.session_state.messages[1:] + [HumanMessage(content=prompt)]
+                # The current prompt is already inside messages.
+                # Do NOT append HumanMessage(content=prompt) again.
+                messages_to_send = (
+                    [current_system_message]
+                    + st.session_state.messages[1:]
+                )
 
+                # Send conversation to Gemini
                 chat_completion = llm.invoke(messages_to_send)
-                ai_response_content = chat_completion.content
+
+                # Gemini can return either:
+                # 1. A normal string
+                # 2. A list of content blocks
+                raw_content = chat_completion.content
+
+                if isinstance(raw_content, str):
+                    ai_response_content = raw_content
+
+                elif isinstance(raw_content, list):
+                    text_parts = []
+
+                    for block in raw_content:
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                text_parts.append(block.get("text", ""))
+                        else:
+                            text_parts.append(str(block))
+
+                    ai_response_content = "\n".join(text_parts).strip()
+
+                else:
+                    ai_response_content = str(raw_content)
+
+                # Display clean response
                 st.markdown(ai_response_content)
-                st.session_state.messages.append(AIMessage(content=ai_response_content))
+
+                # Store clean response in conversation history
+                st.session_state.messages.append(
+                    AIMessage(content=ai_response_content)
+                )
