@@ -1,0 +1,6 @@
+.venv/
+.git/
+__pycache__/
+*.pyc
+.env
+temp_uploaded_pdfs/
