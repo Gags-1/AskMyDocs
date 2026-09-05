@@ -95,10 +95,10 @@ if uploaded_file is not None and st.session_state.vector_db is None:
         f.write(uploaded_file.getbuffer())
 
     # Upload PDF to S3
-       s3.upload_file(
-       temp_file_path,
-       S3_BUCKET_NAME,
-       uploaded_file.name
+    s3.upload_file(
+        temp_file_path,
+        S3_BUCKET_NAME,
+        uploaded_file.name
     )
     try:
 
