@@ -14,4 +14,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build Docker image
-      - runs: docker build -t askmydocs:latest .
+      - run: docker build -t askmydocs:latest .
