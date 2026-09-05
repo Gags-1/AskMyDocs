@@ -1,9 +1,13 @@
 name: AskMyDocs CI/CD
 
-on:
+"on":
   push:
     branches:
       - main
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   build:
@@ -13,5 +17,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::031879842147:role/askmydocs-github-actions
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build Docker image
-        run: docker build -t askmydocs:latest .
+        run: |
+          docker build -t askmydocs:latest .
+
+      - name: Tag Docker image
+        run: |
+          docker tag askmydocs:latest 031879842147.dkr.ecr.us-east-1.amazonaws.com/askmydocs-app:latest
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push 031879842147.dkr.ecr.us-east-1.amazonaws.com/askmydocs-app:latest
