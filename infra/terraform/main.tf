@@ -14,6 +14,7 @@ provider "aws" {
   region = var.aws_region
 }
 
+data "aws_caller_identity" "current" {}
 
 resource "aws_vpc" "main" {
   cidr_block = var.vpc_cidr
@@ -113,6 +114,14 @@ resource "aws_ecr_repository" "app" {
   }
 }
 
+resource "aws_s3_bucket" "pdf_storage" {
+  bucket = "${var.project_name}-pdf-storage-${data.aws_caller_identity.current.account_id}"
+
+  tags = {
+    Name = "${var.project_name}-pdf-storage"
+  }
+}
+
 resource "aws_iam_role" "ec2_role" {
   name = "${var.project_name}-ec2-role"
 
@@ -145,6 +154,37 @@ resource "aws_iam_role_policy_attachment" "ecr_read_only" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy" "ec2_s3" {
+  name = "${var.project_name}-ec2-s3"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = [
+          "s3:ListBucket"
+        ]
+
+        Resource = aws_s3_bucket.pdf_storage.arn
+      },
+      {
+        Effect = "Allow"
+
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ]
+
+        Resource = "${aws_s3_bucket.pdf_storage.arn}/*"
+      }
+    ]
+  })
+}
 
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "${var.project_name}-ec2-profile"

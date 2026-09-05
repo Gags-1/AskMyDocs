@@ -1,3 +1,4 @@
+import boto3
 import streamlit as st
 from dotenv import load_dotenv
 import os
@@ -28,6 +29,9 @@ st.write("Upload a PDF, then ask questions based on its content!")
 load_dotenv()
 
 
+S3_BUCKET_NAME = "askmydocs-pdf-storage-031879842147"
+
+s3 = boto3.client("s3")
 # --------------------------------------------------
 # Gemini LLM
 # --------------------------------------------------
@@ -90,6 +94,12 @@ if uploaded_file is not None and st.session_state.vector_db is None:
     with open(temp_file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
+    # Upload PDF to S3
+       s3.upload_file(
+       temp_file_path,
+       S3_BUCKET_NAME,
+       uploaded_file.name
+    )
     try:
 
         with st.spinner(
