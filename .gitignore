@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 temp_uploaded_pdfs/
+session-manager-plugin.deb
 
 # Terraform
 infra/terraform/.terraform/
