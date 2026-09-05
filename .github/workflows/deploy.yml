@@ -37,3 +37,18 @@ jobs:
       - name: Push Docker image to ECR
         run: |
           docker push 031879842147.dkr.ecr.us-east-1.amazonaws.com/askmydocs-app:latest
+
+      - name: Deploy to EC2
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          aws ssm send-command \
+            --instance-ids i-0c9952d06e25369c7 \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 031879842147.dkr.ecr.us-east-1.amazonaws.com",
+              "docker pull 031879842147.dkr.ecr.us-east-1.amazonaws.com/askmydocs-app:latest",
+              "docker rm -f askmydocs || true",
+              "docker run -d --name askmydocs --network askmydocs-network -p 8501:8501 -e GOOGLE_API_KEY='"$GOOGLE_API_KEY"' -e QDRANT_URL=http://qdrant:6333 031879842147.dkr.ecr.us-east-1.amazonaws.com/askmydocs-app:latest"
+            ]' \
+            --region us-east-1
