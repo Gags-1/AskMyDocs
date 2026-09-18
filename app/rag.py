@@ -12,56 +12,195 @@ from .config import (
 from .embeddings import get_embedding_model
 
 
-def process_pdf(file_path):
+def extract_pdf(file_path):
     """
-    Load a PDF, split it into chunks,
-    create embeddings, and store the vectors in Qdrant.
+    Extract pages from a PDF.
 
     Returns:
-        vector_db: Qdrant vector store
-        document_id: Unique ID for this PDF
+        list[Document]: One LangChain Document per PDF page.
     """
 
-    # Create a unique ID for this document
-    document_id = str(uuid.uuid4())
-
-    # Load the PDF
     loader = PyPDFLoader(file_path=file_path)
+
     docs = loader.load()
 
-    # Split the PDF into smaller chunks
+    if not docs:
+        raise ValueError(
+            "No pages could be extracted from the PDF."
+        )
+
+    return docs
+
+
+def find_pages_needing_ocr(docs):
+    """
+    Identify PDF pages where text extraction
+    produced no usable text.
+
+    Returns:
+        list[int]: Zero-based page numbers requiring OCR.
+    """
+
+    pages_needing_ocr = []
+
+    for doc in docs:
+
+        text = doc.page_content.strip()
+
+        if not text:
+
+            page_number = doc.metadata.get(
+                "page"
+            )
+
+            pages_needing_ocr.append(
+                page_number
+            )
+
+    return pages_needing_ocr
+
+
+def validate_extraction(docs):
+    """
+    Perform basic extraction quality checks.
+    """
+
+    if not docs:
+        raise ValueError(
+            "PDF extraction returned no pages."
+        )
+
+    pages_needing_ocr = find_pages_needing_ocr(
+        docs
+    )
+
+    pages_with_text = (
+        len(docs) - len(pages_needing_ocr)
+    )
+
+    extraction_coverage = (
+        pages_with_text / len(docs)
+    )
+
+    return {
+        "total_pages": len(docs),
+        "pages_with_text": pages_with_text,
+        "pages_needing_ocr": pages_needing_ocr,
+        "extraction_coverage": extraction_coverage,
+    }
+
+
+def chunk_documents(docs):
+    """
+    Split extracted documents into smaller chunks.
+    """
+
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200
     )
 
-    split_docs = text_splitter.split_documents(
+    return text_splitter.split_documents(
         documents=docs
     )
 
-    # Add document ID to every chunk
-    for document in split_docs:
-        document.metadata["document_id"] = document_id
 
-    # Create embeddings
-    embedding_model = get_embedding_model()
+def process_pdf(file_path):
+    """
+    Process a PDF through the RAG ingestion pipeline.
 
-    # Store chunks and embeddings in Qdrant
-    vector_db = QdrantVectorStore.from_documents(
-        documents=split_docs,
-        url=QDRANT_URL,
-        collection_name=QDRANT_COLLECTION_NAME,
-        embedding=embedding_model,
-        api_key=QDRANT_API_KEY
+    PDF
+      ↓
+    extraction
+      ↓
+    validation
+      ↓
+    chunking
+      ↓
+    embeddings
+      ↓
+    Qdrant
+    """
+
+    document_id = str(
+        uuid.uuid4()
     )
 
-    return vector_db, document_id
+    # -------------------------------
+    # 1. Extract
+    # -------------------------------
+
+    docs = extract_pdf(
+        file_path
+    )
+
+    # -------------------------------
+    # 2. Validate extraction
+    # -------------------------------
+
+    extraction_report = validate_extraction(
+        docs
+    )
+
+    print(
+        "Extraction report:",
+        extraction_report
+    )
+
+    # -------------------------------
+    # 3. Chunk
+    # -------------------------------
+
+    split_docs = chunk_documents(
+        docs
+    )
+
+    # -------------------------------
+    # 4. Add document ID
+    # -------------------------------
+
+    for document in split_docs:
+
+        document.metadata[
+            "document_id"
+        ] = document_id
+
+    # -------------------------------
+    # 5. Create embeddings
+    # -------------------------------
+
+    embedding_model = (
+        get_embedding_model()
+    )
+
+    # -------------------------------
+    # 6. Store in Qdrant
+    # -------------------------------
+
+    vector_db = (
+        QdrantVectorStore.from_documents(
+            documents=split_docs,
+            url=QDRANT_URL,
+            collection_name=QDRANT_COLLECTION_NAME,
+            embedding=embedding_model,
+            api_key=QDRANT_API_KEY
+        )
+    )
+
+    return (
+        vector_db,
+        document_id
+    )
 
 
-def search_pdf(vector_db, query, document_id):
+def search_pdf(
+    vector_db,
+    query,
+    document_id
+):
     """
-    Search only the chunks belonging to the
-    specified PDF document.
+    Search only chunks belonging
+    to the specified PDF.
     """
 
     return vector_db.similarity_search(
