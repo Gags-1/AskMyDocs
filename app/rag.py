@@ -28,6 +28,36 @@ def extract_pdf(file_path):
     return docs
 
 
+def classify_pages(docs):
+    """
+    Classify pages based on the initial text extraction.
+
+    TEXT  -> page contains usable extracted text
+    BLANK -> page contains no text and appears to be blank
+    OCR   -> page has no extractable text and may be scanned
+    """
+
+    classifications = []
+
+    for doc in docs:
+        page_number = doc.metadata.get("page")
+        text = doc.page_content.strip()
+
+        if text:
+            page_type = "TEXT"
+        else:
+            page_type = "OCR"
+
+        classifications.append(
+            {
+                "page": page_number,
+                "type": page_type,
+            }
+        )
+
+    return classifications
+
+
 def find_pages_needing_ocr(docs):
     pages_needing_ocr = []
 
@@ -76,7 +106,9 @@ def ocr_pages(file_path, pages):
                 )
             )
 
-            text = pytesseract.image_to_string(image).strip()
+            text = pytesseract.image_to_string(
+                image
+            ).strip()
 
             if text:
                 ocr_docs.append(
@@ -98,14 +130,6 @@ def ocr_pages(file_path, pages):
 
 
 def validate_ocr_quality(text):
-    """
-    Perform basic quality checks on OCR output.
-
-    Returns:
-        dict containing quality metrics and whether
-        the extracted text is considered usable.
-    """
-
     text = text.strip()
 
     if not text:
@@ -129,7 +153,6 @@ def validate_ocr_quality(text):
         else 0
     )
 
-    # Very small OCR output is usually not useful.
     if character_count < 20:
         return {
             "valid": False,
@@ -138,8 +161,6 @@ def validate_ocr_quality(text):
             "alphabetic_ratio": alphabetic_ratio,
         }
 
-    # Extremely low alphabetic ratio often indicates
-    # OCR garbage, symbols, or image artifacts.
     if alphabetic_ratio < 0.20:
         return {
             "valid": False,
@@ -157,10 +178,6 @@ def validate_ocr_quality(text):
 
 
 def validate_ocr_documents(ocr_docs):
-    """
-    Validate OCR output page by page.
-    """
-
     failed_pages = []
     quality_reports = []
 
@@ -193,7 +210,9 @@ def normalize_metadata(docs, document_id):
         page_number = document.metadata.get("page")
 
         if page_number is not None:
-            document.metadata["page_label"] = page_number + 1
+            document.metadata["page_label"] = (
+                page_number + 1
+            )
 
         document.metadata["document_id"] = document_id
 
@@ -217,16 +236,18 @@ def chunk_documents(docs):
 def process_pdf(file_path):
     document_id = str(uuid.uuid4())
 
-    # -----------------------------------
-    # 1. Extract text from PDF
-    # -----------------------------------
-
+    # 1. Extract
     docs = extract_pdf(file_path)
 
-    # -----------------------------------
-    # 2. Validate extraction
-    # -----------------------------------
+    # 2. Classify
+    page_classifications = classify_pages(docs)
 
+    print(
+        "Page classifications:",
+        page_classifications
+    )
+
+    # 3. Validate extraction
     extraction_report = validate_extraction(docs)
 
     print(
@@ -238,10 +259,7 @@ def process_pdf(file_path):
         extraction_report["pages_needing_ocr"]
     )
 
-    # -----------------------------------
-    # 3. OCR fallback
-    # -----------------------------------
-
+    # 4. OCR fallback
     if pages_needing_ocr:
 
         print(
@@ -254,10 +272,7 @@ def process_pdf(file_path):
             pages_needing_ocr
         )
 
-        # -----------------------------------
-        # 4. Validate OCR quality
-        # -----------------------------------
-
+        # 5. Validate OCR
         ocr_report = validate_ocr_documents(
             ocr_docs
         )
@@ -267,11 +282,7 @@ def process_pdf(file_path):
             ocr_report
         )
 
-        # -----------------------------------
-        # 5. Replace failed text extraction
-        #    with OCR results
-        # -----------------------------------
-
+        # 6. Replace failed extraction
         docs_by_page = {
             doc.metadata.get("page"): doc
             for doc in docs
@@ -288,31 +299,19 @@ def process_pdf(file_path):
             for page_number in sorted(docs_by_page)
         ]
 
-    # -----------------------------------
-    # 6. Normalize metadata
-    # -----------------------------------
-
+    # 7. Normalize metadata
     docs = normalize_metadata(
         docs,
         document_id
     )
 
-    # -----------------------------------
-    # 7. Chunk
-    # -----------------------------------
-
+    # 8. Chunk
     split_docs = chunk_documents(docs)
 
-    # -----------------------------------
-    # 8. Create embeddings
-    # -----------------------------------
-
+    # 9. Embeddings
     embedding_model = get_embedding_model()
 
-    # -----------------------------------
-    # 9. Store in Qdrant
-    # -----------------------------------
-
+    # 10. Qdrant
     vector_db = QdrantVectorStore.from_documents(
         documents=split_docs,
         url=QDRANT_URL,
