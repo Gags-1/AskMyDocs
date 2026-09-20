@@ -224,14 +224,22 @@ def normalize_metadata(docs, document_id):
 
 def chunk_documents(docs):
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=800,
+        chunk_overlap=120,
+        separators=[
+            "\n\n",
+            "\n",
+            ". ",
+            " ",
+            "",
+        ],
     )
 
-    return text_splitter.split_documents(
+    chunks = text_splitter.split_documents(
         documents=docs
     )
 
+    return chunks
 
 def process_pdf(file_path):
     document_id = str(uuid.uuid4())
